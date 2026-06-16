@@ -1,0 +1,33 @@
+services:
+  moss-tts-nano:
+    image: ${MOSS_TTS_IMAGE:?请先设置 MOSS_TTS_IMAGE，例如 yourname/moss-tts-nano:latest}
+    container_name: ${MOSS_TTS_CONTAINER:-moss-tts-nano-cpu}
+    volumes:
+      - ./moss-tts-data:/app/data
+      - ./moss-tts-output:/app/output
+    ports:
+      - "${MOSS_TTS_PORT:-8000}:18083"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HF_ENDPOINT=${HF_ENDPOINT:-https://hf-mirror.com}
+      - HF_HOME=/app/data/huggingface
+      - HUGGINGFACE_HUB_CACHE=/app/data/huggingface/hub
+      - TRANSFORMERS_CACHE=/app/data/huggingface/transformers
+      - CUSTOM_VOICE_METADATA_PATH=/app/data/custom_voices.json
+      - CUSTOM_VOICE_AUDIO_DIR=/app/data/custom_audio
+    command:
+      - python3
+      - app.py
+      - --host
+      - 0.0.0.0
+      - --port
+      - "18083"
+      - --output-dir
+      - /app/output
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:18083/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s

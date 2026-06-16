@@ -1,0 +1,48 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update && apt-get install -y \
+    git \
+    libsndfile1 \
+    ffmpeg \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt pyproject.toml ./
+
+# Install CPU PyTorch first, then install the rest of the project requirements
+# without letting pip replace these CPU wheels.
+RUN python -m pip install --upgrade pip \
+    && pip install \
+    torch==2.7.0+cpu \
+    torchaudio==2.7.0+cpu \
+    --index-url https://download.pytorch.org/whl/cpu \
+    && sed '/^torch==/d;/^torchaudio==/d' requirements.txt > /tmp/requirements-no-torch.txt \
+    && pip install -r /tmp/requirements-no-torch.txt \
+    && pip check
+
+COPY . .
+
+RUN python - <<'PY'
+import importlib.util
+import py_compile
+from pathlib import Path
+
+for path in Path(".").rglob("*.py"):
+    if "__pycache__" not in path.parts:
+        py_compile.compile(str(path), doraise=True)
+
+import torch
+import torchaudio
+print("torch", torch.__version__)
+print("torchaudio", torchaudio.__version__)
+print("torchvision installed:", importlib.util.find_spec("torchvision") is not None)
+PY
+
+EXPOSE 18083
+
+CMD ["python3", "app.py", "--host", "0.0.0.0", "--port", "18083", "--output-dir", "/app/output"]
