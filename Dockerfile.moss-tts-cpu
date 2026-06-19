@@ -5,6 +5,8 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
+ARG INSTALL_WETEXT=0
+
 RUN apt-get update && apt-get install -y \
     git \
     libsndfile1 \
@@ -29,7 +31,9 @@ RUN python -m pip install --upgrade pip \
         --index-url https://download.pytorch.org/whl/cpu; \
     fi \
     && sed '/^torch==/d;/^torchaudio==/d' requirements.txt > /tmp/requirements-no-torch.txt \
+    && if [ "${INSTALL_WETEXT}" != "1" ]; then sed -i '/^WeTextProcessing/d' /tmp/requirements-no-torch.txt; fi \
     && pip install -r /tmp/requirements-no-torch.txt \
+    && if [ "${INSTALL_WETEXT}" = "1" ]; then python -c "import tn.chinese.normalizer, tn.english.normalizer"; fi \
     && pip check
 
 COPY . .

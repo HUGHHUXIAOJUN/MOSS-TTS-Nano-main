@@ -41,6 +41,13 @@ MOSS_TTS_PORT=8001
 HF_ENDPOINT=https://hf-mirror.com
 ```
 
+The CPU Dockerfile skips `WeTextProcessing` by default because its `pynini`
+dependency often has no ready wheel on ARM64 and may require a local C++/OpenFST
+build. The web app still runs with `normalize_tts_text`; the WeTextProcessing
+toggle is disabled when the package is unavailable. To opt in, build with
+`--build-arg INSTALL_WETEXT=1` and provide any platform build dependencies your
+host needs.
+
 The app listens on `0.0.0.0:18083` inside the container so Docker port mapping can expose it to the host.
 
 Custom voices created from the web UI are persisted in `./moss-tts-data/custom_voices.json` and `./moss-tts-data/custom_audio` when using either compose file.

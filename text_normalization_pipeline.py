@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import logging
 from pathlib import Path
 import re
@@ -11,6 +12,16 @@ from tts_robust_normalizer_single_script import normalize_tts_text
 ENGLISH_VOICES = frozenset({"Trump", "Ava", "Bella", "Adam", "Nathan"})
 CUSTOM_ZH_WETEXT_CACHE_DIR = Path(__file__).resolve().parent / ".cache" / "wetext_zh_no_erhua_keep_punct"
 _ZH_WETEXT_KEEP_HYPHEN = "___KEEP_HYPHEN_BEFORE_ZH_WETEXT___"
+
+
+def _wetext_modules_available() -> bool:
+    try:
+        return (
+            importlib.util.find_spec("tn.chinese.normalizer") is not None
+            and importlib.util.find_spec("tn.english.normalizer") is not None
+        )
+    except ModuleNotFoundError:
+        return False
 
 
 @dataclass(frozen=True)
@@ -25,6 +36,10 @@ class TextNormalizationSnapshot:
     def failed(self) -> bool:
         return self.state == "failed"
 
+    @property
+    def disabled(self) -> bool:
+        return self.state == "disabled" or not self.available
+
 
 class WeTextProcessingManager:
     def __init__(self) -> None:
@@ -32,10 +47,14 @@ class WeTextProcessingManager:
         self._normalize_lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._started = False
-        self._state = "pending"
-        self._message = "Waiting for WeTextProcessing preload."
+        self._available = _wetext_modules_available()
+        self._state = "pending" if self._available else "disabled"
+        self._message = (
+            "Waiting for WeTextProcessing preload."
+            if self._available
+            else "WeTextProcessing unavailable; install WeTextProcessing and pynini to enable it."
+        )
         self._error: str | None = None
-        self._available = True
         self._normalizers: dict[str, object] | None = None
 
     def snapshot(self) -> TextNormalizationSnapshot:
@@ -55,6 +74,8 @@ class WeTextProcessingManager:
             self._error = error
 
     def start(self) -> None:
+        if not self._available:
+            return
         with self._lock:
             if self._started:
                 return
@@ -63,6 +84,8 @@ class WeTextProcessingManager:
             self._thread.start()
 
     def ensure_ready(self) -> TextNormalizationSnapshot:
+        if not self._available:
+            return self.snapshot()
         with self._lock:
             if not self._started:
                 self._started = True
@@ -79,9 +102,9 @@ class WeTextProcessingManager:
     def _run(self) -> None:
         if not self._available:
             self._set_state(
-                state="failed",
-                message="WeTextProcessing unavailable.",
-                error="installed WeTextProcessing modules are unavailable",
+                state="disabled",
+                message="WeTextProcessing unavailable; install WeTextProcessing and pynini to enable it.",
+                error=None,
             )
             return
         try:
@@ -115,6 +138,8 @@ class WeTextProcessingManager:
 
     def normalize(self, *, text: str, prompt_text: str, language: str) -> tuple[str, str]:
         snapshot = self.ensure_ready()
+        if not snapshot.available:
+            raise RuntimeError(snapshot.message)
         if not snapshot.ready:
             raise RuntimeError(snapshot.error or snapshot.message)
 

@@ -314,6 +314,10 @@ class WarmupSnapshot:
     def failed(self) -> bool:
         return self.state == "failed"
 
+    @property
+    def disabled(self) -> bool:
+        return self.state == "disabled"
+
 
 class WarmupManager:
     def __init__(self, runtime: NanoTTSService, text_normalizer_manager: "WeTextProcessingManager | None" = None) -> None:
@@ -379,6 +383,7 @@ class WarmupManager:
             self._set_state(state="running", progress=0.6, message="Running startup warmup synthesis.", error=None)
             result = self.runtime.warmup()
             _maybe_delete_file(result["audio_path"])
+            text_normalization_suffix = ""
             if self.text_normalizer_manager is not None:
                 self._set_state(
                     state="running",
@@ -389,13 +394,16 @@ class WarmupManager:
                 normalization_snapshot = self.text_normalizer_manager.ensure_ready()
                 if normalization_snapshot.failed:
                     raise RuntimeError(normalization_snapshot.error or normalization_snapshot.message)
+                if normalization_snapshot.disabled:
+                    logging.info("WeTextProcessing warmup skipped: %s", normalization_snapshot.message)
+                text_normalization_suffix = f" | {normalization_snapshot.message}"
             self._set_state(
                 state="ready",
                 progress=1.0,
                 message=(
                     f"Warmup complete. device={self.runtime.device} "
                     f"elapsed={result['elapsed_seconds']:.2f}s"
-                    + (" | WeTextProcessing ready." if self.text_normalizer_manager is not None else "")
+                    + text_normalization_suffix
                 ),
                 error=None,
             )
@@ -866,6 +874,7 @@ def _render_index_html(
     demo_entries: list[DemoEntry],
     warmup_status: str,
     text_normalization_status: str,
+    text_normalization_available: bool,
 ) -> str:
     base_path = request.scope.get("root_path", "").rstrip("/")
     template = """
@@ -1489,7 +1498,7 @@ def _render_index_html(
             <label><input id="do-sample" type="checkbox" checked> Do Sample</label>
           </div>
           <div class="field">
-            <label><input id="enable-text-normalization" type="checkbox" checked> Enable WeTextProcessing</label>
+            <label><input id="enable-text-normalization" type="checkbox" __WETEXT_CHECKED__> Enable WeTextProcessing</label>
           </div>
           <div class="field">
             <label><input id="enable-robust-text-normalization" type="checkbox" checked> Enable normalize_tts_text</label>
@@ -1555,6 +1564,7 @@ def _render_index_html(
     const DEFAULT_DEMO_ID = __DEFAULT_DEMO_ID__;
     const DEFAULT_ATTN_IMPLEMENTATION = __DEFAULT_ATTN_IMPLEMENTATION__;
     const DEFAULT_CPU_THREADS = __DEFAULT_CPU_THREADS__;
+    const DEFAULT_WETEXT_AVAILABLE = __DEFAULT_WETEXT_AVAILABLE__;
 
     const demoSelect = document.getElementById("demo");
     const promptAudioUploadInput = document.getElementById("prompt-audio-upload");
@@ -1588,6 +1598,7 @@ def _render_index_html(
     const refreshBtn = document.getElementById("refresh-btn");
     const realtimeStreamToggle = document.getElementById("realtime-stream");
     const initialPlaybackDelayInput = document.getElementById("initial-playback-delay-seconds");
+    const textNormalizationToggle = document.getElementById("enable-text-normalization");
 
     let currentAudioObjectUrl = null;
     let currentStreamId = null;
@@ -2780,6 +2791,10 @@ def _render_index_html(
           normalizationData.status_text || t("statusUnknown"),
           Boolean(normalizationData.failed)
         );
+        textNormalizationToggle.disabled = !Boolean(normalizationData.available);
+        if (!Boolean(normalizationData.available)) {
+          textNormalizationToggle.checked = false;
+        }
       } catch (error) {
         setStatus(warmupStatus, String(error), true);
         setStatus(textNormalizationStatus, String(error), true);
@@ -3076,6 +3091,8 @@ def _render_index_html(
     });
     renderDemoOptions(DEFAULT_DEMO_ID);
     renderVoiceManagerOptions(DEFAULT_DEMO_ID);
+    textNormalizationToggle.checked = DEFAULT_WETEXT_AVAILABLE;
+    textNormalizationToggle.disabled = !DEFAULT_WETEXT_AVAILABLE;
     applyLanguage(currentLanguage);
     setStatus(runStatus, t("statusIdle"));
     applySelectedDemo(true);
@@ -3093,6 +3110,8 @@ def _render_index_html(
         "__DEFAULT_DEMO_ID__": json.dumps(demo_entries[0].demo_id if demo_entries else ""),
         "__DEFAULT_ATTN_IMPLEMENTATION__": json.dumps(runtime.attn_implementation or "model_default"),
         "__DEFAULT_CPU_THREADS__": json.dumps(max(1, int(os.cpu_count() or 1))),
+        "__DEFAULT_WETEXT_AVAILABLE__": json.dumps(bool(text_normalization_available)),
+        "__WETEXT_CHECKED__": "checked" if text_normalization_available else "",
         "__WARMUP_STATUS__": warmup_status,
         "__TEXT_NORMALIZATION_STATUS__": text_normalization_status,
         "__CHECKPOINT__": str(runtime.checkpoint_path),
@@ -4023,6 +4042,11 @@ def _build_app(
                 warmup_status=_warmup_status_text(warmup_manager.snapshot()),
                 text_normalization_status=_text_normalization_status_text(
                     text_normalizer_manager.snapshot() if text_normalizer_manager is not None else None
+                ),
+                text_normalization_available=(
+                    bool(text_normalizer_manager.snapshot().available)
+                    if text_normalizer_manager is not None
+                    else False
                 ),
             )
         )
