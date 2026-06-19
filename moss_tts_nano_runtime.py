@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
 import threading
 import time
 import uuid
@@ -116,6 +117,27 @@ def _existing_local_model_path(value: str) -> Path | None:
     if expanded.exists():
         return expanded.resolve()
     return None
+
+
+def _is_probable_remote_model_source(value: str) -> bool:
+    return _existing_local_model_path(value) is None
+
+
+def _format_hf_load_failure(source: str, exc: Exception) -> RuntimeError:
+    endpoint = os.environ.get("HF_ENDPOINT") or "https://huggingface.co"
+    cache_items = [
+        f"HF_HOME={os.environ.get('HF_HOME') or '<not set>'}",
+        f"HUGGINGFACE_HUB_CACHE={os.environ.get('HUGGINGFACE_HUB_CACHE') or '<not set>'}",
+        f"TRANSFORMERS_CACHE={os.environ.get('TRANSFORMERS_CACHE') or '<not set>'}",
+    ]
+    message = (
+        f"Failed to load Hugging Face model source '{source}' from {endpoint}. "
+        "If this machine/container cannot reach that endpoint, either unset/change HF_ENDPOINT "
+        "or download the model first and pass a local directory via --checkpoint-path / "
+        "--audio-tokenizer-path or MOSS_TTS_CHECKPOINT_PATH / MOSS_TTS_AUDIO_TOKENIZER_PATH. "
+        f"Cache: {', '.join(cache_items)}. Original error: {exc}"
+    )
+    return RuntimeError(message)
 
 
 @lru_cache(maxsize=1)
@@ -319,11 +341,16 @@ class NanoTTSService:
                 codec_attn_implementation,
                 codec_compute_dtype,
             )
-            audio_tokenizer = AutoModel.from_pretrained(
-                self.audio_tokenizer_path,
-                trust_remote_code=True,
-                local_files_only=_existing_local_model_path(self.audio_tokenizer_path) is not None,
-            )
+            try:
+                audio_tokenizer = AutoModel.from_pretrained(
+                    self.audio_tokenizer_path,
+                    trust_remote_code=True,
+                    local_files_only=not _is_probable_remote_model_source(self.audio_tokenizer_path),
+                )
+            except Exception as exc:
+                if _is_probable_remote_model_source(self.audio_tokenizer_path):
+                    raise _format_hf_load_failure(self.audio_tokenizer_path, exc) from exc
+                raise
             if hasattr(audio_tokenizer, "eval"):
                 audio_tokenizer.eval()
             self._audio_tokenizer = audio_tokenizer
@@ -356,11 +383,16 @@ class NanoTTSService:
             self.dtype,
             self.attn_implementation or "model_default",
         )
-        model = AutoModelForCausalLM.from_pretrained(
-            self.checkpoint_path,
-            trust_remote_code=True,
-            local_files_only=_existing_local_model_path(self.checkpoint_path) is not None,
-        )
+        try:
+            model = AutoModelForCausalLM.from_pretrained(
+                self.checkpoint_path,
+                trust_remote_code=True,
+                local_files_only=not _is_probable_remote_model_source(self.checkpoint_path),
+            )
+        except Exception as exc:
+            if _is_probable_remote_model_source(self.checkpoint_path):
+                raise _format_hf_load_failure(self.checkpoint_path, exc) from exc
+            raise
         model.to(device=self.device, dtype=self.dtype)
         self._checkpoint_global_attn_implementation, self._checkpoint_local_attn_implementation = (
             self._read_model_attention_implementation(model)

@@ -50,6 +50,13 @@ CUSTOM_VOICE_LANGUAGES = {"zh", "en", "ja", "ko", "other"}
 CUSTOM_VOICE_LOCK = threading.Lock()
 
 
+def _env_default(name: str, fallback: str | Path) -> str:
+    value = os.environ.get(name)
+    if value is None or not value.strip():
+        return str(fallback)
+    return value
+
+
 @dataclass(frozen=True)
 class DemoEntry:
     demo_id: str
@@ -3903,15 +3910,27 @@ def _build_app(
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
     parser = argparse.ArgumentParser(description="MOSS-TTS-Nano web demo")
-    parser.add_argument("--checkpoint-path", "--checkpoint_path", dest="checkpoint_path", type=str, default=str(DEFAULT_CHECKPOINT_PATH))
+    parser.add_argument(
+        "--checkpoint-path",
+        "--checkpoint_path",
+        dest="checkpoint_path",
+        type=str,
+        default=_env_default("MOSS_TTS_CHECKPOINT_PATH", DEFAULT_CHECKPOINT_PATH),
+    )
     parser.add_argument(
         "--audio-tokenizer-path",
         "--audio_tokenizer_path",
         dest="audio_tokenizer_path",
         type=str,
-        default=str(DEFAULT_AUDIO_TOKENIZER_PATH),
+        default=_env_default("MOSS_TTS_AUDIO_TOKENIZER_PATH", DEFAULT_AUDIO_TOKENIZER_PATH),
     )
-    parser.add_argument("--output-dir", "--output_dir", dest="output_dir", type=str, default=str(DEFAULT_OUTPUT_DIR))
+    parser.add_argument(
+        "--output-dir",
+        "--output_dir",
+        dest="output_dir",
+        type=str,
+        default=_env_default("MOSS_TTS_OUTPUT_DIR", DEFAULT_OUTPUT_DIR),
+    )
     parser.add_argument("--device", type=str, default="cpu", choices=["cpu", "auto"])
     parser.add_argument("--dtype", type=str, default="auto", choices=["auto", "float32", "float16", "bfloat16"])
     parser.add_argument(

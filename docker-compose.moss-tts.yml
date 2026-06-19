@@ -16,6 +16,8 @@ services:
       - HF_HOME=/app/data/huggingface
       - HUGGINGFACE_HUB_CACHE=/app/data/huggingface/hub
       - TRANSFORMERS_CACHE=/app/data/huggingface/transformers
+      - MOSS_TTS_CHECKPOINT_PATH=${MOSS_TTS_CHECKPOINT_PATH:-OpenMOSS-Team/MOSS-TTS-Nano}
+      - MOSS_TTS_AUDIO_TOKENIZER_PATH=${MOSS_TTS_AUDIO_TOKENIZER_PATH:-OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano}
       - CUSTOM_VOICE_METADATA_PATH=/app/data/custom_voices.json
       - CUSTOM_VOICE_AUDIO_DIR=/app/data/custom_audio
     command:
