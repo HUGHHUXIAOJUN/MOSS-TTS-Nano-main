@@ -9,7 +9,7 @@ services:
       - "${MOSS_TTS_PORT:-8000}:18083"
     environment:
       - PYTHONUNBUFFERED=1
-      - HF_ENDPOINT=${HF_ENDPOINT:-https://hf-mirror.com}
+      - HF_ENDPOINT=${HF_ENDPOINT:-https://huggingface.co}
       - HF_HOME=/app/data/huggingface
       - HUGGINGFACE_HUB_CACHE=/app/data/huggingface/hub
       - TRANSFORMERS_CACHE=/app/data/huggingface/transformers
