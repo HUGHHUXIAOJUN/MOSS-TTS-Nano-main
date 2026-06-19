@@ -1003,6 +1003,12 @@ def _render_index_html(
     .top-tab:disabled {
       opacity: 1;
     }
+    .top-nav-link {
+      cursor: pointer;
+    }
+    #voice-manager {
+      display: none;
+    }
     .grid {
       display: grid;
       grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
@@ -1324,6 +1330,7 @@ def _render_index_html(
       <p class="build-note">Built with <a href="https://github.com/OpenMOSS/MOSS-TTS-Nano" target="_blank" rel="noopener noreferrer">MOSS-TTS-Nano</a>.</p>
       <div class="top-tabs" role="tablist" aria-label="Demo mode">
         <button class="top-tab active" type="button" aria-selected="true">Voice Clone</button>
+        <a id="voice-library-link" class="top-tab top-nav-link" href="__VOICE_LIBRARY_URL__">Voice Library</a>
       </div>
     </div>
 
@@ -1617,6 +1624,7 @@ def _render_index_html(
         pointPresets: "<strong>Voice Presets</strong> - Choose built-in demos from <code>assets/demo.jsonl</code>.",
         buildNote: 'Built with <a href="https://github.com/OpenMOSS/MOSS-TTS-Nano" target="_blank" rel="noopener noreferrer">MOSS-TTS-Nano</a>.',
         topTab: "Voice Clone",
+        voiceLibraryTab: "Voice Library",
         labelDemo: "Voice / Demo",
         labelPromptSpeech: "Prompt Speech",
         labelText: "Text",
@@ -1722,6 +1730,7 @@ def _render_index_html(
         pointPresets: "<strong>内置示例</strong> - 从 <code>assets/demo.jsonl</code> 选择预设文本和参考音频。",
         buildNote: '基于 <a href="https://github.com/OpenMOSS/MOSS-TTS-Nano" target="_blank" rel="noopener noreferrer">MOSS-TTS-Nano</a> 构建。',
         topTab: "音色克隆",
+        voiceLibraryTab: "音色库",
         labelDemo: "音色 / 示例",
         labelPromptSpeech: "参考音频",
         labelText: "合成文本",
@@ -1835,7 +1844,7 @@ def _render_index_html(
       const dictionary = UI_TEXT[currentLanguage] || UI_TEXT.en;
       const fallback = UI_TEXT.en[key] || key;
       const template = dictionary[key] || fallback;
-      return String(template).replace(/\{(\w+)\}/g, (_match, name) => {
+      return String(template).replace(/\\{(\\w+)\\}/g, (_match, name) => {
         return params[name] === undefined || params[name] === null ? "" : String(params[name]);
       });
     }
@@ -1905,6 +1914,7 @@ def _render_index_html(
       setHtml(".hero-points li:nth-child(2)", t("pointPresets"));
       setHtml(".build-note", t("buildNote"));
       setText(".top-tab.active", t("topTab"));
+      setText("#voice-library-link", t("voiceLibraryTab"));
       setText('label[for="demo"]', t("labelDemo"));
       setText('label[for="prompt-audio-upload"]', t("labelPromptSpeech"));
       setText('label[for="text"]', t("labelText"));
@@ -3078,6 +3088,7 @@ def _render_index_html(
     demos_payload = [_demo_entry_to_payload(demo_entry) for demo_entry in demo_entries]
     replacements = {
         "__APP_BASE__": json.dumps(base_path),
+        "__VOICE_LIBRARY_URL__": json.dumps(f"{base_path}/voices" if base_path else "/voices").strip('"'),
         "__DEMOS__": json.dumps(demos_payload, ensure_ascii=False),
         "__DEFAULT_DEMO_ID__": json.dumps(demo_entries[0].demo_id if demo_entries else ""),
         "__DEFAULT_ATTN_IMPLEMENTATION__": json.dumps(runtime.attn_implementation or "model_default"),
@@ -3086,6 +3097,668 @@ def _render_index_html(
         "__TEXT_NORMALIZATION_STATUS__": text_normalization_status,
         "__CHECKPOINT__": str(runtime.checkpoint_path),
         "__AUDIO_TOKENIZER__": str(runtime.audio_tokenizer_path),
+    }
+    for placeholder, value in replacements.items():
+        template = template.replace(placeholder, value)
+    return template
+
+
+def _render_voice_library_html(*, request: Request) -> str:
+    base_path = request.scope.get("root_path", "").rstrip("/")
+    template = """
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MOSS-TTS-Nano Voice Library</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #eef1f7;
+      --panel: #ffffff;
+      --text: #1f2534;
+      --muted: #647089;
+      --line: #dbe2f0;
+      --chip: #dfe5ff;
+      --chip-text: #4f63d8;
+      --accent: #6a6ef6;
+      --accent-strong: #565cea;
+      --danger: #ba1f46;
+      --shadow: 0 14px 32px rgba(34, 47, 78, 0.06);
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(180deg, #f7f8fc 0%, var(--bg) 58%);
+      color: var(--text);
+      font-family: "Plus Jakarta Sans", "Noto Sans SC", "Segoe UI", sans-serif;
+    }
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px 26px 30px;
+    }
+    .hero {
+      margin-bottom: 14px;
+    }
+    .hero-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 34px;
+      letter-spacing: 0;
+    }
+    .lead {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.55;
+    }
+    .language-switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.86);
+      box-shadow: 0 6px 14px rgba(34, 47, 78, 0.05);
+      flex: 0 0 auto;
+    }
+    .language-option {
+      border: 0;
+      border-radius: 6px;
+      padding: 7px 10px;
+      min-width: 44px;
+      background: transparent;
+      color: #52617f;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .language-option.active {
+      background: var(--accent);
+      color: #ffffff;
+    }
+    .top-tabs {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      margin-top: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .top-tab {
+      border: 0;
+      background: transparent;
+      color: #4e5f89;
+      font-size: 15px;
+      font-weight: 500;
+      padding: 10px 0;
+      position: relative;
+      text-decoration: none;
+    }
+    .top-tab.active {
+      color: var(--accent-strong);
+      font-weight: 700;
+    }
+    .top-tab.active::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -1px;
+      height: 2px;
+      background: var(--accent-strong);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(280px, 0.82fr) minmax(320px, 1.18fr);
+      gap: 14px;
+      margin-top: 14px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      box-shadow: var(--shadow);
+    }
+    .field {
+      margin-bottom: 12px;
+    }
+    .field > label,
+    .field-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 7px;
+      font-size: 14px;
+      line-height: 1;
+      font-weight: 700;
+      color: var(--chip-text);
+      background: var(--chip);
+      border-radius: 6px;
+      padding: 5px 8px;
+    }
+    input,
+    textarea,
+    select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 14px;
+      color: var(--text);
+      background: #ffffff;
+    }
+    textarea {
+      min-height: 128px;
+      resize: vertical;
+    }
+    input[type="file"] {
+      border-style: dashed;
+      padding: 34px 12px;
+      background: linear-gradient(180deg, #ffffff 0%, #f5f8ff 100%);
+    }
+    audio {
+      width: 100%;
+      margin-top: 10px;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    button:not(.language-option) {
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      background: linear-gradient(90deg, #6469f6 0%, #636ef8 50%, #5f61f0 100%);
+      color: #ffffff;
+    }
+    button.secondary {
+      background: #edf1fb;
+      color: #44527a;
+      border: 1px solid var(--line);
+    }
+    button.danger {
+      background: #fff0f4;
+      color: var(--danger);
+      border: 1px solid rgba(186, 31, 70, 0.24);
+    }
+    button:not(.language-option):disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .meta {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 7px;
+      line-height: 1.5;
+    }
+    .status {
+      min-height: 24px;
+      color: var(--muted);
+    }
+    .status.error {
+      color: var(--danger);
+    }
+    @media (max-width: 860px) {
+      .page {
+        padding: 16px 14px 20px;
+      }
+      .grid,
+      .row {
+        grid-template-columns: 1fr;
+      }
+      h1 {
+        font-size: 28px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="hero">
+      <div class="hero-header">
+        <div>
+          <h1 id="page-title">Voice Library</h1>
+          <p id="page-lead" class="lead">Manage reusable voice presets for generation.</p>
+        </div>
+        <div class="language-switch" role="group" aria-label="Language">
+          <button id="language-zh" class="language-option" type="button" data-lang="zh">中文</button>
+          <button id="language-en" class="language-option" type="button" data-lang="en">EN</button>
+        </div>
+      </div>
+      <div class="top-tabs">
+        <a id="generate-link" class="top-tab" href="__HOME_URL__">Voice Clone</a>
+        <a id="voice-library-link" class="top-tab active" href="__VOICE_LIBRARY_URL__">Voice Library</a>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="panel">
+        <div class="field">
+          <label id="voice-entry-label" for="voice-select">Voice Entry</label>
+          <select id="voice-select"></select>
+          <div id="voice-info" class="meta"></div>
+        </div>
+        <audio id="voice-preview" controls hidden></audio>
+        <div class="actions">
+          <button id="refresh-voices-btn" class="secondary" type="button">Refresh Voices</button>
+        </div>
+        <div id="voice-list-status" class="meta status"></div>
+      </div>
+
+      <div class="panel">
+        <div class="row">
+          <div class="field">
+            <label id="display-title-label" for="voice-title">Display Title</label>
+            <input id="voice-title" type="text" maxlength="80" placeholder="Name shown in the voice selector">
+          </div>
+          <div class="field">
+            <label id="language-label" for="voice-language">Language</label>
+            <select id="voice-language">
+              <option value="zh">中文</option>
+              <option value="en">English</option>
+              <option value="ja">日本語</option>
+              <option value="ko">한국어</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label id="recording-label" for="voice-audio">Voice Recording</label>
+          <input id="voice-audio" type="file" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg,.opus,.aac">
+        </div>
+        <div class="field">
+          <label id="default-text-label" for="voice-text">Default Text (optional)</label>
+          <textarea id="voice-text" placeholder="Optional text to fill when this voice is selected."></textarea>
+        </div>
+        <div class="actions">
+          <button id="create-voice-btn" type="button">Add Voice</button>
+          <button id="update-voice-btn" class="secondary" type="button">Update Voice</button>
+          <button id="delete-voice-btn" class="danger" type="button">Delete Voice</button>
+        </div>
+        <div id="voice-form-status" class="meta status"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const APP_BASE = __APP_BASE__;
+    const voicesById = new Map();
+    let voices = [];
+
+    const voiceSelect = document.getElementById("voice-select");
+    const voiceInfo = document.getElementById("voice-info");
+    const voicePreview = document.getElementById("voice-preview");
+    const voiceTitleInput = document.getElementById("voice-title");
+    const voiceLanguageSelect = document.getElementById("voice-language");
+    const voiceAudioInput = document.getElementById("voice-audio");
+    const voiceTextInput = document.getElementById("voice-text");
+    const createVoiceBtn = document.getElementById("create-voice-btn");
+    const updateVoiceBtn = document.getElementById("update-voice-btn");
+    const deleteVoiceBtn = document.getElementById("delete-voice-btn");
+    const refreshVoicesBtn = document.getElementById("refresh-voices-btn");
+    const voiceListStatus = document.getElementById("voice-list-status");
+    const voiceFormStatus = document.getElementById("voice-form-status");
+    const languageButtons = Array.from(document.querySelectorAll(".language-option"));
+
+    const UI_TEXT = {
+      en: {
+        htmlLang: "en",
+        documentTitle: "MOSS-TTS-Nano Voice Library",
+        pageTitle: "Voice Library",
+        pageLead: "Manage reusable voice presets for generation.",
+        generateTab: "Voice Clone",
+        voiceLibraryTab: "Voice Library",
+        voiceEntry: "Voice Entry",
+        displayTitle: "Display Title",
+        displayTitlePlaceholder: "Name shown in the voice selector",
+        language: "Language",
+        voiceRecording: "Voice Recording",
+        defaultTextOptional: "Default Text (optional)",
+        defaultTextPlaceholder: "Optional text to fill when this voice is selected.",
+        addVoice: "Add Voice",
+        updateVoice: "Update Voice",
+        deleteVoice: "Delete Voice",
+        refreshVoices: "Refresh Voices",
+        voiceKindBuiltin: "Built-in",
+        voiceKindCustom: "Custom",
+        noVoices: "No voices available.",
+        builtinVoiceInfo: "Built-in voice. It can be selected for generation, but cannot be modified or deleted.",
+        customVoiceInfo: "Custom voice. You can update its title, language, default text, or replace its recording.",
+        voiceTitleRequired: "Please enter a display title.",
+        voiceAudioRequired: "Please choose a voice recording.",
+        voiceSelectRequired: "Please select a voice entry.",
+        voiceCreated: "Custom voice added.",
+        voiceUpdated: "Custom voice updated.",
+        voiceDeleted: "Custom voice deleted.",
+        voiceRefreshed: "Voice list refreshed.",
+        voiceDeleteConfirm: "Delete this custom voice? This cannot be undone.",
+        builtinModifyBlocked: "Built-in voices cannot be modified or deleted.",
+      },
+      zh: {
+        htmlLang: "zh-CN",
+        documentTitle: "MOSS-TTS-Nano 音色库",
+        pageTitle: "音色库",
+        pageLead: "管理可复用的生成音色。",
+        generateTab: "音色克隆",
+        voiceLibraryTab: "音色库",
+        voiceEntry: "音色条目",
+        displayTitle: "显示标题",
+        displayTitlePlaceholder: "显示在音色下拉框中的名称",
+        language: "语言",
+        voiceRecording: "音色录音",
+        defaultTextOptional: "默认文本 (可选)",
+        defaultTextPlaceholder: "选择该音色时自动填入的文本，可不填。",
+        addVoice: "新增音色",
+        updateVoice: "更新音色",
+        deleteVoice: "删除音色",
+        refreshVoices: "刷新音色",
+        voiceKindBuiltin: "系统内置",
+        voiceKindCustom: "自定义",
+        noVoices: "暂无可用音色。",
+        builtinVoiceInfo: "系统内置音色，可用于生成，但不能修改或删除。",
+        customVoiceInfo: "自定义音色，可修改标题、语言、默认文本，也可以替换录音。",
+        voiceTitleRequired: "请输入显示标题。",
+        voiceAudioRequired: "请选择一段音色录音。",
+        voiceSelectRequired: "请选择一个音色条目。",
+        voiceCreated: "自定义音色已新增。",
+        voiceUpdated: "自定义音色已更新。",
+        voiceDeleted: "自定义音色已删除。",
+        voiceRefreshed: "音色列表已刷新。",
+        voiceDeleteConfirm: "确定删除这个自定义音色吗？此操作不可撤销。",
+        builtinModifyBlocked: "系统内置音色不能修改或删除。",
+      },
+    };
+
+    function readPreferredLanguage() {
+      try {
+        const savedLanguage = window.localStorage.getItem("moss_tts_language");
+        if (savedLanguage === "zh" || savedLanguage === "en") {
+          return savedLanguage;
+        }
+      } catch (error) {
+      }
+      return navigator.language && navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+    }
+
+    let currentLanguage = readPreferredLanguage();
+
+    function t(key) {
+      const dictionary = UI_TEXT[currentLanguage] || UI_TEXT.en;
+      return dictionary[key] || UI_TEXT.en[key] || key;
+    }
+
+    function setText(id, value) {
+      const node = document.getElementById(id);
+      if (node) {
+        node.textContent = value;
+      }
+    }
+
+    function applyLanguage(language) {
+      currentLanguage = language === "en" ? "en" : "zh";
+      try {
+        window.localStorage.setItem("moss_tts_language", currentLanguage);
+      } catch (error) {
+      }
+      document.documentElement.lang = t("htmlLang");
+      document.title = t("documentTitle");
+      for (const button of languageButtons) {
+        const isActive = button.dataset.lang === currentLanguage;
+        button.classList.toggle("active", isActive);
+        button.setAttribute("aria-pressed", String(isActive));
+      }
+      setText("page-title", t("pageTitle"));
+      setText("page-lead", t("pageLead"));
+      setText("generate-link", t("generateTab"));
+      setText("voice-library-link", t("voiceLibraryTab"));
+      setText("voice-entry-label", t("voiceEntry"));
+      setText("display-title-label", t("displayTitle"));
+      setText("language-label", t("language"));
+      setText("recording-label", t("voiceRecording"));
+      setText("default-text-label", t("defaultTextOptional"));
+      setText("create-voice-btn", t("addVoice"));
+      setText("update-voice-btn", t("updateVoice"));
+      setText("delete-voice-btn", t("deleteVoice"));
+      setText("refresh-voices-btn", t("refreshVoices"));
+      voiceTitleInput.placeholder = t("displayTitlePlaceholder");
+      voiceTextInput.placeholder = t("defaultTextPlaceholder");
+      renderVoiceOptions(voiceSelect.value);
+      syncVoiceForm();
+    }
+
+    for (const button of languageButtons) {
+      button.addEventListener("click", () => applyLanguage(button.dataset.lang));
+    }
+
+    async function fetchJson(url, options) {
+      const response = await fetch(url, options);
+      const text = await response.text();
+      if (!response.ok) {
+        throw new Error(text || `HTTP ${response.status}`);
+      }
+      return text ? JSON.parse(text) : {};
+    }
+
+    function languageLabel(language) {
+      const labels = {
+        zh: "中文",
+        en: "English",
+        ja: "日本語",
+        ko: "한국어",
+        other: currentLanguage === "zh" ? "其他" : "Other",
+      };
+      return labels[language] || labels.zh;
+    }
+
+    function voiceKindLabel(voice) {
+      return voice && voice.is_custom ? t("voiceKindCustom") : t("voiceKindBuiltin");
+    }
+
+    function formatVoiceLabel(voice) {
+      if (!voice) {
+        return "";
+      }
+      const parts = [voiceKindLabel(voice)];
+      if (voice.language) {
+        parts.push(languageLabel(voice.language));
+      }
+      return `${voice.name} (${parts.join(" / ")})`;
+    }
+
+    function getSelectedVoice() {
+      return voicesById.get(voiceSelect.value) || null;
+    }
+
+    function setStatus(node, message, isError = false) {
+      node.textContent = message || "";
+      node.classList.toggle("error", Boolean(isError));
+    }
+
+    function getPromptAudioUrl(voiceId) {
+      return `${APP_BASE}/api/demo-prompt-audio/${encodeURIComponent(voiceId)}`;
+    }
+
+    function renderVoiceOptions(selectedId = "") {
+      const previousId = selectedId || voiceSelect.value;
+      voicesById.clear();
+      voiceSelect.innerHTML = "";
+      for (const voice of voices) {
+        voicesById.set(voice.id, voice);
+        const option = document.createElement("option");
+        option.value = voice.id;
+        option.textContent = formatVoiceLabel(voice);
+        voiceSelect.appendChild(option);
+      }
+      if (previousId && voicesById.has(previousId)) {
+        voiceSelect.value = previousId;
+      } else if (voices.length > 0) {
+        voiceSelect.value = voices[0].id;
+      }
+    }
+
+    function syncVoiceForm() {
+      const voice = getSelectedVoice();
+      if (!voice) {
+        voiceTitleInput.value = "";
+        voiceLanguageSelect.value = "zh";
+        voiceTextInput.value = "";
+        voicePreview.hidden = true;
+        voicePreview.removeAttribute("src");
+        updateVoiceBtn.disabled = true;
+        deleteVoiceBtn.disabled = true;
+        voiceInfo.textContent = t("noVoices");
+        return;
+      }
+
+      voiceTitleInput.value = voice.name || "";
+      voiceLanguageSelect.value = voice.language || "zh";
+      voiceTextInput.value = voice.text || "";
+      const isCustom = Boolean(voice.is_custom);
+      updateVoiceBtn.disabled = !isCustom;
+      deleteVoiceBtn.disabled = !isCustom;
+      voiceInfo.textContent = isCustom ? t("customVoiceInfo") : t("builtinVoiceInfo");
+      voicePreview.src = getPromptAudioUrl(voice.id);
+      voicePreview.hidden = false;
+    }
+
+    async function refreshVoiceLibrary(selectedId = "") {
+      const payload = await fetchJson(`${APP_BASE}/api/voices`);
+      voices = Array.isArray(payload.voices) ? payload.voices : [];
+      renderVoiceOptions(selectedId);
+      syncVoiceForm();
+      return payload;
+    }
+
+    function buildVoiceFormData({ requireAudio }) {
+      const title = voiceTitleInput.value.trim();
+      if (!title) {
+        throw new Error(t("voiceTitleRequired"));
+      }
+      const audioFile = voiceAudioInput.files && voiceAudioInput.files.length > 0
+        ? voiceAudioInput.files[0]
+        : null;
+      if (requireAudio && !audioFile) {
+        throw new Error(t("voiceAudioRequired"));
+      }
+      const formData = new FormData();
+      formData.append("title", title);
+      formData.append("language", voiceLanguageSelect.value || "zh");
+      formData.append("text", voiceTextInput.value || "");
+      if (audioFile) {
+        formData.append("prompt_audio", audioFile);
+      }
+      return formData;
+    }
+
+    async function createCustomVoice() {
+      try {
+        setStatus(voiceFormStatus, "");
+        const payload = await fetchJson(`${APP_BASE}/api/voices`, {
+          method: "POST",
+          body: buildVoiceFormData({ requireAudio: true }),
+        });
+        const voiceId = payload.voice && payload.voice.id ? payload.voice.id : "";
+        voiceAudioInput.value = "";
+        await refreshVoiceLibrary(voiceId);
+        setStatus(voiceFormStatus, t("voiceCreated"));
+      } catch (error) {
+        setStatus(voiceFormStatus, String(error), true);
+      }
+    }
+
+    async function updateCustomVoice() {
+      const voice = getSelectedVoice();
+      if (!voice) {
+        setStatus(voiceFormStatus, t("voiceSelectRequired"), true);
+        return;
+      }
+      if (!voice.is_custom) {
+        setStatus(voiceFormStatus, t("builtinModifyBlocked"), true);
+        return;
+      }
+      try {
+        setStatus(voiceFormStatus, "");
+        const payload = await fetchJson(`${APP_BASE}/api/voices/${encodeURIComponent(voice.id)}`, {
+          method: "PUT",
+          body: buildVoiceFormData({ requireAudio: false }),
+        });
+        const voiceId = payload.voice && payload.voice.id ? payload.voice.id : voice.id;
+        voiceAudioInput.value = "";
+        await refreshVoiceLibrary(voiceId);
+        setStatus(voiceFormStatus, t("voiceUpdated"));
+      } catch (error) {
+        setStatus(voiceFormStatus, String(error), true);
+      }
+    }
+
+    async function deleteCustomVoice() {
+      const voice = getSelectedVoice();
+      if (!voice) {
+        setStatus(voiceFormStatus, t("voiceSelectRequired"), true);
+        return;
+      }
+      if (!voice.is_custom) {
+        setStatus(voiceFormStatus, t("builtinModifyBlocked"), true);
+        return;
+      }
+      if (!window.confirm(t("voiceDeleteConfirm"))) {
+        return;
+      }
+      try {
+        setStatus(voiceFormStatus, "");
+        await fetchJson(`${APP_BASE}/api/voices/${encodeURIComponent(voice.id)}`, {
+          method: "DELETE",
+        });
+        voiceAudioInput.value = "";
+        await refreshVoiceLibrary();
+        setStatus(voiceFormStatus, t("voiceDeleted"));
+      } catch (error) {
+        setStatus(voiceFormStatus, String(error), true);
+      }
+    }
+
+    voiceSelect.addEventListener("change", syncVoiceForm);
+    createVoiceBtn.addEventListener("click", createCustomVoice);
+    updateVoiceBtn.addEventListener("click", updateCustomVoice);
+    deleteVoiceBtn.addEventListener("click", deleteCustomVoice);
+    refreshVoicesBtn.addEventListener("click", () => {
+      refreshVoiceLibrary(voiceSelect.value)
+        .then(() => setStatus(voiceListStatus, t("voiceRefreshed")))
+        .catch((error) => setStatus(voiceListStatus, String(error), true));
+    });
+
+    applyLanguage(currentLanguage);
+    refreshVoiceLibrary().catch((error) => setStatus(voiceListStatus, String(error), true));
+  </script>
+</body>
+</html>
+"""
+    replacements = {
+        "__APP_BASE__": json.dumps(base_path),
+        "__HOME_URL__": f"{base_path}/" if base_path else "/",
+        "__VOICE_LIBRARY_URL__": f"{base_path}/voices" if base_path else "/voices",
     }
     for placeholder, value in replacements.items():
         template = template.replace(placeholder, value)
@@ -3353,6 +4026,10 @@ def _build_app(
                 ),
             )
         )
+
+    @app.get("/voices", response_class=HTMLResponse)
+    async def voice_library(request: Request):
+        return HTMLResponse(_render_voice_library_html(request=request))
 
     @app.get("/health")
     async def health():
