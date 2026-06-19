@@ -17,10 +17,17 @@ COPY requirements.txt pyproject.toml ./
 # Install CPU PyTorch first, then install the rest of the project requirements
 # without letting pip replace these CPU wheels.
 RUN python -m pip install --upgrade pip \
-    && pip install \
-    torch==2.7.0+cpu \
-    torchaudio==2.7.0+cpu \
-    --index-url https://download.pytorch.org/whl/cpu \
+    && if [ "$(uname -m)" = "aarch64" ]; then \
+      pip install \
+        torch==2.7.0+cpu \
+        torchaudio==2.7.0 \
+        --index-url https://download.pytorch.org/whl/cpu; \
+    else \
+      pip install \
+        torch==2.7.0+cpu \
+        torchaudio==2.7.0+cpu \
+        --index-url https://download.pytorch.org/whl/cpu; \
+    fi \
     && sed '/^torch==/d;/^torchaudio==/d' requirements.txt > /tmp/requirements-no-torch.txt \
     && pip install -r /tmp/requirements-no-torch.txt \
     && pip check
